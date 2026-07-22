@@ -1,0 +1,142 @@
+// This is your Prisma schema file
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Enums
+enum ChapterStatus {
+  DRAFT
+  FINAL
+}
+
+enum AuthorType {
+  HUMAN
+  AI
+  MIXED
+}
+
+enum Role {
+  CREATOR
+  ADMIN
+}
+
+model User {
+  id             String          @id @default(cuid())
+  email          String          @unique
+  passwordHash   String
+  displayName    String
+  publicSlug     String          @unique
+  bio            String?
+  avatarUrl      String?
+  role           Role            @default(CREATOR)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  projects       Project[]
+  aiInteractions AiInteraction[]
+}
+
+model Project {
+  id             String          @id @default(cuid())
+  userId         String
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title          String
+  genre          String?
+  tone           String?
+  targetAudience String?
+  premise        String
+  isPublic       Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  outline        Outline?
+  chapters       Chapter[]
+  aiInteractions AiInteraction[]
+  publishedWorks PublishedWork[]
+
+  @@index([userId])
+}
+
+model Outline {
+  id            String   @id @default(cuid())
+  projectId     String   @unique
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  content       String   // markdown/json outline structure
+  generatedByAI Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Chapter {
+  id             String          @id @default(cuid())
+  projectId      String
+  project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  order          Int
+  title          String
+  status         ChapterStatus   @default(DRAFT)
+  isPremium      Boolean         @default(false)
+  versions       Version[]
+  aiInteractions AiInteraction[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([projectId])
+}
+
+model Version {
+  id            String     @id @default(cuid())
+  chapterId     String
+  chapter       Chapter    @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  versionNumber Int // 1, 2, 3... per chapter. Human-referenceable, and the @@unique below
+  // doubles as our concurrency guard: two concurrent saves racing to write the
+  // same versionNumber (including two "genesis" saves both trying for 1) will
+  // have one insert fail instead of silently forking the chain.
+  content       String     @db.Text // full snapshot at this version
+  chainHash     String // sha256(sha256(content) + previousHash) — see src/lib/hash.ts.
+  // Named chainHash (not contentHash) because it's a hash of the content
+  // *chained to* the previous version's hash, not a hash of content alone.
+  previousHash  String? // previous version's chainHash; null for genesis version
+  ipfsCid       String? // set once this version has been anchored to IPFS via Pinata
+  note          String? // human note on this version, e.g. "sent to beta readers"
+  authorType    AuthorType
+  createdAt     DateTime   @default(now())
+
+  @@unique([chapterId, versionNumber])
+  @@index([chapterId, createdAt])
+}
+
+model PublishedWork {
+  id               String   @id @default(cuid())
+  projectId        String
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  format           String   @default("pdf") // "pdf" now, "epub" planned
+  pdfUrl           String
+  verificationHash String // hash of the final version at export time
+  publishedAt      DateTime @default(now())
+
+  @@index([projectId])
+}
+
+model AiInteraction {
+  id        String   @id @default(cuid())
+  userId    String
+  projectId String?
+  chapterId String?
+  type      String // OUTLINE, CHAPTER_DRAFT, REWRITE, REVIEW, etc.
+  input     String   @db.Text
+  output    String   @db.Text
+  modelInfo String?
+  createdAt DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chapter Chapter? @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([projectId])
+  @@index([chapterId])
+}
