@@ -1,7 +1,15 @@
-import type { User, Project, Chapter, Version, Outline, AiInteraction } from "@/generated/prisma/models";
+import type {
+  User,
+  Project,
+  Chapter,
+  Version,
+  Outline,
+  AiInteraction,
+  PublishedWork
+} from "@/generated/prisma/client";
 
 // Re-export Prisma types
-export type { User, Project, Chapter, Version, Outline, AiInteraction };
+export type { User, Project, Chapter, Version, Outline, AiInteraction, PublishedWork };
 
 // Extended types for API responses
 export type UserWithProjects = User & {
